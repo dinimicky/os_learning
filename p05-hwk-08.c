@@ -1,32 +1,55 @@
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
-#include <fcntl.h>
-#include <sys/wait.h>
 
 int main(int argc, char *argv[])
 {
-    printf("hello world (pid:%d)\n", (int)getpid());
-    int rc = fork();
+    int pipefd[2];
+    pid_t cpid;
+    char buf;
+    char buffer[40];
 
-    if (rc < 0)
+    if (argc != 2)
     {
-        fprintf(stderr, "fork failed\n");
-        exit(1);
+        fprintf(stderr, "Usage: %s <string>\n", argv[0]);
+        exit(EXIT_FAILURE);
     }
-    else if (rc == 0)
+
+    if (pipe(pipefd) == -1)
     {
-        close(STDOUT_FILENO);
-        open("./p05-hwk-07.output", O_CREAT | O_WRONLY | O_TRUNC, S_IRWXU);
-        printf("hello, I am a child(pid:%d)\n", (int)getpid());
-        printf("hello from child\n");
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
+    cpid = fork();
+    if (cpid == -1)
+    {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    }
+
+    if (cpid == 0)
+    {                     /* Child reads from pipe */
+        close(pipefd[1]); /* Close unused write end */
+
+        strcpy(buffer, "child: ");
+        write(STDOUT_FILENO, &buffer, strlen(buffer));
+        while (read(pipefd[0], &buf, 1) > 0)
+            write(STDOUT_FILENO, &buf, 1);
+
+        write(STDOUT_FILENO, "\n", 1);
+        close(pipefd[0]);
+        _exit(EXIT_SUCCESS);
     }
     else
-    {
-        printf("hello, I am parent of %d (pid:%d)\n", rc, (int)getpid());
-        printf("goodbye from parent\n");
+    {                     /* Parent writes argv[1] to pipe */
+        close(pipefd[0]); /* Close unused read end */
+        write(pipefd[1], argv[1], strlen(argv[1]));
+        close(pipefd[1]); /* Reader will see EOF */
+        wait(NULL);       /* Wait for child */
+        exit(EXIT_SUCCESS);
     }
-
-    return 0;
 }
